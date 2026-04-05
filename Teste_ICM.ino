@@ -17,6 +17,9 @@
 // ACCEL
 #define ACCEL_XOUT_H 0x2D
 
+// GYRO
+#define GYRO_XOUT_H 0x33
+
 class ICM20948
 {
 private:
@@ -30,18 +33,31 @@ private:
   static constexpr float ACCEL_G = 9.80665f;
   static constexpr float ACCEL_SENSITIVITY_16G = 2048.0f;
 
-  float X;
-  float Y;
-  float Z;
+  float X_accel;
+  float Y_accel;
+  float Z_accel;
+  
+  // GYRO
+  int16_t xaux_gyro;
+  int16_t yaux_gyro;
+  int16_t zaux_gyro;
+
+  float X_gyro;
+  float Y_gyro;
+  float Z_gyro;
 public:
   bool begin();
   bool readAccel();
   bool readGyro(); 
   bool readMagn();
 
-  float getX();
-  float getY();
-  float getZ();
+  float getX_accel();
+  float getY_accel();
+  float getZ_accel();
+
+  float getX_gyro();
+  float getY_gyro();
+  float getZ_gyro();
 };
 
 /* Fim Header */
@@ -131,31 +147,59 @@ bool ICM20948::readAccel() {
   yaux_acc = Wire.read() << 8 | Wire.read();
   zaux_acc = Wire.read() << 8 | Wire.read();
 
-  X = float(xaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
-  Y = float(yaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
-  Z = float(zaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
+  X_accel = float(xaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
+  Y_accel = float(yaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
+  Z_accel = float(zaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
 }
 
+float ICM20948::getX_accel() {
+  return X_accel;
+}
+
+float ICM20948::getY_accel() {
+  return Y_accel;
+}
+
+float ICM20948::getZ_accel() {
+  return Z_accel;
+}
 
 bool ICM20948::readGyro() {
+  Wire.beginTransmission(address);
+  Wire.endTransmission();
+  Wire.beginTransmission(address);
+  Wire.write(GYRO_XOUT_H);
+  Wire.endTransmission();
 
+  Wire.requestFrom(address, uint8_t(6));
+  unsigned long temp = micros();
+  while (Wire.available() < 6)
+  {
+    if (temp + 10 < micros())
+      break;
+  }
+
+  X_gyro = Wire.read() << 8 | Wire.read();
+  Y_gyro = Wire.read() << 8 | Wire.read();
+  Z_gyro = Wire.read() << 8 | Wire.read();
+}
+
+float ICM20948::getX_gyro() {
+  return X_gyro;
+}
+
+float ICM20948::getY_gyro() {
+  return Y_gyro;
+}
+
+float ICM20948::getZ_gyro() {
+  return Z_gyro;
 }
 
 bool ICM20948::readMagn() {
 
 }
 
-float ICM20948::getX() {
-  return X;
-}
-
-float ICM20948::getY() {
-  return Y;
-}
-
-float ICM20948::getZ() {
-  return Z;
-}
 
 /* Fim CPP */
 
@@ -165,13 +209,19 @@ void setup() {
   Serial.begin(115200);
   Wire.begin();
   myICM.begin();
-  Serial.println("X.accel\tY.accel\tZ.accel");
+  Serial.print("X.accel\tY.accel\tZ.accel\t");
+  Serial.print("X.gyro\tY.gyro\tZ.gyro");
+  Serial.println();
 }
 
 void loop() {
   myICM.readAccel();
-  Serial.print(myICM.getX()); Serial.print("\t");
-  Serial.print(myICM.getY()); Serial.print("\t");
-  Serial.print(myICM.getZ()); Serial.print("\t");
+  Serial.print(myICM.getX_accel()); Serial.print("\t");
+  Serial.print(myICM.getY_accel()); Serial.print("\t");
+  Serial.print(myICM.getZ_accel()); Serial.print("\t");
+
+  Serial.print(myICM.getX_gyro()); Serial.print("\t");
+  Serial.print(myICM.getY_gyro()); Serial.print("\t");
+  Serial.print(myICM.getZ_gyro()); Serial.print("\t");
   Serial.println();
 }
