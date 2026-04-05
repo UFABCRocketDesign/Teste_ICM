@@ -27,11 +27,12 @@ private:
   int16_t yaux_acc;
   int16_t zaux_acc;
 
+  static constexpr float ACCEL_G = 9.80665f;
+  static constexpr float ACCEL_SENSITIVITY_16G = 2048.0f;
+
   float X;
   float Y;
   float Z;
-
-  static constexpr float ACCEL_G = 9.80665f;
 public:
   bool begin();
   bool readAccel();
@@ -130,9 +131,9 @@ bool ICM20948::readAccel() {
   yaux_acc = Wire.read() << 8 | Wire.read();
   zaux_acc = Wire.read() << 8 | Wire.read();
 
-  X = float(xaux_acc) * ACCEL_G;
-  Y = float(yaux_acc) * ACCEL_G;
-  Z = float(zaux_acc) * ACCEL_G;
+  X = float(xaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
+  Y = float(yaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
+  Z = float(zaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
 }
 
 
