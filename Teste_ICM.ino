@@ -216,6 +216,8 @@ void setup() {
 
 void loop() {
   myICM.readAccel();
+  myICM.readGyro();
+  
   Serial.print(myICM.getX_accel()); Serial.print("\t");
   Serial.print(myICM.getY_accel()); Serial.print("\t");
   Serial.print(myICM.getZ_accel()); Serial.print("\t");
@@ -223,5 +225,6 @@ void loop() {
   Serial.print(myICM.getX_gyro()); Serial.print("\t");
   Serial.print(myICM.getY_gyro()); Serial.print("\t");
   Serial.print(myICM.getZ_gyro()); Serial.print("\t");
+
   Serial.println();
 }
