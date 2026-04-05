@@ -2,6 +2,7 @@
 
 #include <Wire.h>
 
+// BEGIN
 #define PWR_MGMT_1 0x06
 #define PWR_MGMT_2 0x07
 #define LP_CONFIG 0x05
@@ -13,15 +14,33 @@
 #define INT_PIN_CFG 0x0F
 #define REG_BANK_SEL 0x7F
 
+// ACCEL
+#define ACCEL_XOUT_H 0x2D
+
 class ICM20948
 {
 private:
   uint8_t address = 0x69;
+
+  // ACCEL
+  int16_t xaux_acc;
+  int16_t yaux_acc;
+  int16_t zaux_acc;
+
+  float X;
+  float Y;
+  float Z;
+
+  static constexpr float ACCEL_G = 9.80665f;
 public:
   bool begin();
-  float readAccel();
-  float readGyro();
-  float readMagn();
+  bool readAccel();
+  bool readGyro(); 
+  bool readMagn();
+
+  float getX();
+  float getY();
+  float getZ();
 };
 
 /* Fim Header */
@@ -92,14 +111,66 @@ bool ICM20948::begin() {
   Wire.endTransmission();
 }
 
-/* Fim CPP */
+bool ICM20948::readAccel() {
+  Wire.beginTransmission(address);
+  Wire.endTransmission();
+  Wire.beginTransmission(address);
+  Wire.write(ACCEL_XOUT_H);
+  Wire.endTransmission();
 
-void setup() {
-  // put your setup code here, to run once:
+  Wire.requestFrom(address, uint8_t(6));
+  unsigned long temp = micros();
+  while (Wire.available() < 6)
+  {
+    if (temp + 10 < micros())
+      break;
+  }
+
+  xaux_acc = Wire.read() << 8 | Wire.read();
+  yaux_acc = Wire.read() << 8 | Wire.read();
+  zaux_acc = Wire.read() << 8 | Wire.read();
+
+  X = float(xaux_acc) * ACCEL_G;
+  Y = float(yaux_acc) * ACCEL_G;
+  Z = float(zaux_acc) * ACCEL_G;
+}
+
+
+bool ICM20948::readGyro() {
 
 }
 
-void loop() {
-  // put your main code here, to run repeatedly:
+bool ICM20948::readMagn() {
 
+}
+
+float ICM20948::getX() {
+  return X;
+}
+
+float ICM20948::getY() {
+  return Y;
+}
+
+float ICM20948::getZ() {
+  return Z;
+}
+
+/* Fim CPP */
+
+ICM20948 myICM;
+
+void setup() {
+  Serial.begin(115200);
+  Wire.begin();
+  myICM.begin();
+  Serial.println("X.accel\tY.accel\tZ.accel");
+}
+
+void loop() {
+  myICM.readAccel();
+  Serial.print(myICM.getX()); Serial.print("\t");
+  Serial.print(myICM.getY()); Serial.print("\t");
+  Serial.print(myICM.getZ()); Serial.print("\t");
+  Serial.println();
 }
