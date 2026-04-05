@@ -42,6 +42,8 @@ private:
   int16_t yaux_gyro;
   int16_t zaux_gyro;
 
+  static constexpr float GYRO_SENSITIVITY_2000DPS = 16.4f;
+
   float X_gyro;
   float Y_gyro;
   float Z_gyro;
@@ -179,9 +181,13 @@ bool ICM20948::readGyro() {
       break;
   }
 
-  X_gyro = Wire.read() << 8 | Wire.read();
-  Y_gyro = Wire.read() << 8 | Wire.read();
-  Z_gyro = Wire.read() << 8 | Wire.read();
+  xaux_gyro = Wire.read() << 8 | Wire.read();
+  yaux_gyro = Wire.read() << 8 | Wire.read();
+  zaux_gyro = Wire.read() << 8 | Wire.read();
+
+  X_gyro = float(xaux_gyro) / GYRO_SENSITIVITY_2000DPS;
+  Y_gyro = float(yaux_gyro) / GYRO_SENSITIVITY_2000DPS;
+  Z_gyro = float(zaux_gyro) / GYRO_SENSITIVITY_2000DPS;
 }
 
 float ICM20948::getX_gyro() {
