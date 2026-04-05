@@ -20,12 +20,12 @@
 class ICM20948
 {
 private:
-  uint8_t address = 0x69;
+  uint8_t address = 0x68;
 
   // ACCEL
-  int16_t xaux_acc;
-  int16_t yaux_acc;
-  int16_t zaux_acc;
+  uint16_t xaux_acc;
+  uint16_t yaux_acc;
+  uint16_t zaux_acc;
 
   float X;
   float Y;
