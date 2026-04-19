@@ -470,6 +470,7 @@ void loop() {
   myICM.readAccel();
   myICM.readGyro();
   myAK.readMagn();
+  myBMP.readAll();
 
   Serial.print(myICM.getX_accel());
   Serial.print("\t");
