@@ -129,12 +129,8 @@ private:
 public:
   bool begin();
   bool readSensor();
-  float getTemperature() {
-    return temperature;
-  }
-  float getPressure() {
-    return pressure;
-  }
+  float getTemperature();
+  float getPressure();
 };
 
 /* Fim Header */
@@ -339,7 +335,6 @@ float AK09916::getZ_magn() {
 }
 
 bool BMP388::begin() {
-  // Verificar CHIP_ID (deve ser 0x50) [cite: 36, 37]
   Wire.beginTransmission(address);
   Wire.write(BMP3_CHIP_ID_REG);
   Wire.endTransmission();
@@ -423,6 +418,14 @@ float BMP388::compensatePressure(uint32_t uncomp_press) {
   float partial_data4 = partial_data3 + ((float)uncomp_press * (float)uncomp_press * (float)uncomp_press) * calib.par_p11;
 
   return partial_out1 + partial_out2 + partial_data4;
+}
+
+float BMP388::getTemperature() {
+  return temperature;
+}
+
+float BMP388::getPressure() {
+  return pressure;
 }
 
 /* Fim CPP */
