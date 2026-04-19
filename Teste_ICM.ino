@@ -27,6 +27,14 @@
 #define MAG_CNTL2 0x31
 #define MAG_CNTL3 0x32
 
+// BMP
+#define BMP388_ADDRESS_DEFAULT 0x77
+#define BMP3_REG_DATA 0x04
+#define BMP3_REG_PWR_CTRL 0x1B
+#define BMP3_REG_OSR 0x1C
+#define BMP3_REG_CALIB_DATA 0x31
+#define BMP3_REG_CMD 0x7E
+
 class ICM20948 {
 private:
   uint8_t address = 0x68;
@@ -82,6 +90,39 @@ public:
   float getX_magn();
   float getY_magn();
   float getZ_magn();
+};
+
+class BMP388
+{
+    // Parâmetros de calibração (bmp3_reg_calib_data)
+    uint16_t par_t1, par_t2;
+    int8_t   par_t3;
+    int16_t  par_p1, par_p2;
+    int8_t   par_p3, par_p4;
+    uint16_t par_p5, par_p6;
+    int8_t   par_p7, par_p8;
+    int16_t  par_p9;
+    int8_t   par_p10, par_p11;
+    
+    double t_lin; // Variável intermediária de temperatura para o cálculo da pressão
+    uint8_t address;
+
+public:
+    float celcius;
+    float pascal;
+    bool state;
+    
+    unsigned long lastReadT;
+    unsigned long lastWorkT;
+    unsigned long recalibrateT;
+
+    BMP388(uint8_t addr = BMP388_ADDRESS_DEFAULT, float recalT = 0.1);
+    void begin();
+    bool readAll();
+
+private:
+    double compensate_T(uint32_t uncomp_temp);
+    double compensate_P(uint32_t uncomp_press);
 };
 
 /* Fim Header */
@@ -284,19 +325,144 @@ float AK09916::getZ_magn() {
   return Z_magn;
 }
 
+BMP388::BMP388(uint8_t addr, float recalT) {
+  address = addr;
+  recalibrateT = recalT * 1000000;  // Converte segundos para microssegundos
+  state = false;
+  celcius = 0;
+  pascal = 0;
+  lastReadT = 0;
+  lastWorkT = 0;
+}
+
+void BMP388::begin() {
+  // 1. Reset de Software (Opcional, mas recomendado)
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_REG_CMD);
+  Wire.write(0xB6);
+  Wire.endTransmission();
+  delay(10);
+
+  // 2. Leitura dos 21 bytes de calibração a partir do registrador 0x31
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_REG_CALIB_DATA);
+  Wire.endTransmission();
+  Wire.requestFrom(address, uint8_t(21));
+
+  unsigned long start = micros();
+  while (Wire.available() < 21) {
+    if (micros() - start > 5000) break;
+  }
+
+  // Mapeamento dos dados de calibração conforme bmp3.c
+  par_t1 = Wire.read() | (Wire.read() << 8);
+  par_t2 = Wire.read() | (Wire.read() << 8);
+  par_t3 = (int8_t)Wire.read();
+  par_p1 = (int16_t)(Wire.read() | (Wire.read() << 8));
+  par_p2 = (int16_t)(Wire.read() | (Wire.read() << 8));
+  par_p3 = (int8_t)Wire.read();
+  par_p4 = (int8_t)Wire.read();
+  par_p5 = Wire.read() | (Wire.read() << 8);
+  par_p6 = Wire.read() | (Wire.read() << 8);
+  par_p7 = (int8_t)Wire.read();
+  par_p8 = (int8_t)Wire.read();
+  par_p9 = (int16_t)(Wire.read() | (Wire.read() << 8));
+  par_p10 = (int8_t)Wire.read();
+  par_p11 = (int8_t)Wire.read();
+
+  // 3. Configuração de Oversampling (Padrão: x1)
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_REG_OSR);
+  Wire.write(0x00);
+  Wire.endTransmission();
+
+  // 4. Modo de Operação: Normal (0x30), Temp ON (0x02), Press ON (0x01)
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_REG_PWR_CTRL);
+  Wire.write(0x33);
+  Wire.endTransmission();
+}
+
+bool BMP388::readAll() {
+  unsigned long thisReadT = micros();
+  Wire.beginTransmission(address);
+  state = (Wire.endTransmission() == 0);
+
+  if (state) {
+    // Lógica de recalibração periódica do padrão BMP280
+    if (thisReadT - lastWorkT > recalibrateT) {
+      begin();
+    }
+
+    // Leitura de 6 bytes: Dados brutos de Pressão (3 bytes) e Temperatura (3 bytes)
+    Wire.beginTransmission(address);
+    Wire.write(BMP3_REG_DATA);
+    Wire.endTransmission();
+    Wire.requestFrom(address, uint8_t(6));
+
+    unsigned long start = micros();
+    while (Wire.available() < 6) {
+      if (micros() - start > 2000) break;
+    }
+
+    // No BMP388, os dados são de 24 bits (LSB, LSB, MSB)
+    uint32_t adc_p = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
+    uint32_t adc_t = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
+
+    celcius = (float)compensate_T(adc_t);
+    pascal = (float)compensate_P(adc_p);
+
+    lastWorkT = thisReadT;
+  }
+  lastReadT = thisReadT;
+  return state;
+}
+
+// Funções de compensação em ponto flutuante extraídas de bmp3.c
+double BMP388::compensate_T(uint32_t uncomp_temp) {
+  double partial_data1 = (double)(uncomp_temp - (double)par_t1);
+  double partial_data2 = (double)(partial_data1 * ((double)par_t2 / 1073741824.0));
+  t_lin = partial_data2 + (partial_data1 * partial_data1) * ((double)par_t3 / 281474976710656.0);
+  return t_lin;
+}
+
+double BMP388::compensate_P(uint32_t uncomp_press) {
+  double p1, p2, p3, out1, out2, out3;
+
+  p1 = ((double)par_p6 / 64.0) * t_lin;
+  p2 = ((double)par_p7 / 256.0) * (t_lin * t_lin);
+  p3 = ((double)par_p8 / 32768.0) * (t_lin * t_lin * t_lin);
+  out1 = ((double)par_p5 * 8.0) + p1 + p2 + p3;
+
+  p1 = ((double)par_p2 / 536870912.0) * t_lin;
+  p2 = ((double)par_p3 / 4294967296.0) * (t_lin * t_lin);
+  p3 = ((double)par_p4 / 137438953472.0) * (t_lin * t_lin * t_lin);
+  out2 = (double)uncomp_press * (((double)(par_p1 - 16384) / 1048576.0) + p1 + p2 + p3);
+
+  p1 = (double)uncomp_press * (double)uncomp_press;
+  p2 = ((double)par_p9 / 281474976710656.0) + ((double)par_p10 / 281474976710656.0) * t_lin;
+  out3 = (p1 * p2) + ((p1 * (double)uncomp_press) * ((double)par_p11 / 36893488147419103232.0));
+
+  return out1 + out2 + out3;
+}
+
 /* Fim CPP */
 
 ICM20948 myICM;
 AK09916 myAK;
+BMP388 myBMP(0x77, 0.1);
 
 void setup() {
   Serial.begin(115200);
   Wire.begin();
   myICM.begin();
   myAK.begin();
+  myBMP.begin();
+
   Serial.print("X.accel\tY.accel\tZ.accel\t");
   Serial.print("X.gyro\tY.gyro\tZ.gyro\t");
   Serial.print("X.magn\tY.magn\tZ.magn\t");
+  Serial.print("C.bmp\tP.bmp");
   Serial.println();
 }
 
@@ -324,6 +490,11 @@ void loop() {
   Serial.print(myAK.getY_magn());
   Serial.print("\t");
   Serial.print(myAK.getZ_magn());
+  Serial.print("\t");
+
+  Serial.print(myBMP.celcius);
+  Serial.print("\t");
+  Serial.print(myBMP.pascal);
   Serial.print("\t");
 
   Serial.println();
