@@ -291,7 +291,6 @@ bool AK09916::begin() {
   Wire.write(MAG_CNTL3);
   Wire.write(0x01);
   Wire.endTransmission();
-  delay(100);
 
   Wire.beginTransmission(address);
   Wire.write(MAG_CNTL2);
@@ -336,8 +335,8 @@ float AK09916::getZ_magn() {
 
 bool BMP388::begin() {
   Wire.beginTransmission(address);
-  Wire.write(INT_PIN_CFG);
-  Wire.write(0x02);
+  Wire.write(BMP3_CMD);
+  Wire.write(0xB6);
   Wire.endTransmission();
 
   Wire.beginTransmission(address);
@@ -357,7 +356,6 @@ bool BMP388::begin() {
   Wire.write(BMP3_PWR_CTRL);
   Wire.write(0x33);
   Wire.endTransmission();
-
   return true;
 }
 
@@ -388,17 +386,23 @@ void BMP388::readCalibration() {
 bool BMP388::readSensor() {
   Wire.beginTransmission(address);
   Wire.write(BMP3_DATA_0);
-  Wire.endTransmission();
-  Wire.requestFrom(address, (uint8_t)6);
+  Wire.endTransmission(false);
 
-  uint32_t adc_p = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
-  uint32_t adc_t = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
+  if (Wire.requestFrom(address, (uint8_t)6) == 6) {
+    uint8_t d[6];
+    for (int i = 0; i < 6; i++) d[i] = Wire.read();
 
-  temperature = compensateTemperature(adc_t);
-  pressure = compensatePressure(adc_p);
-  return true;
+    uint32_t adc_p = (uint32_t)d[0] | ((uint32_t)d[1] << 8) | ((uint32_t)d[2] << 16);
+    uint32_t adc_t = (uint32_t)d[3] | ((uint32_t)d[4] << 8) | ((uint32_t)d[5] << 16);
+
+    if (adc_p == 0) return false;
+
+    temperature = compensateTemperature(adc_t);
+    pressure = compensatePressure(adc_p);
+    return true;
+  }
+  return false;
 }
-
 
 float BMP388::compensateTemperature(uint32_t uncomp_temp) {
   double partial_data1 = (double)(uncomp_temp - (calib.par_t1 * 256.0));
