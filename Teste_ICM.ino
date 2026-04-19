@@ -27,19 +27,6 @@
 #define MAG_CNTL2 0x31
 #define MAG_CNTL3 0x32
 
-// BMP
-#define BMP3_CHIP_ID_REG 0x00
-#define BMP3_ERR_REG 0x02
-#define BMP3_STATUS_REG 0x03
-#define BMP3_DATA_0 0x04
-#define BMP3_DATA_3 0x07
-#define BMP3_PWR_CTRL 0x1B
-#define BMP3_OSR 0x1C
-#define BMP3_ODR 0x1D
-#define BMP3_CONFIG 0x1F
-#define BMP3_CALIB_DATA 0x31
-#define BMP3_CMD 0x7E
-
 class ICM20948 {
 private:
   uint8_t address = 0x68;
@@ -97,45 +84,7 @@ public:
   float getZ_magn();
 };
 
-class BMP388 {
-private:
-  uint8_t address = 0x76;
-
-  struct {
-    uint16_t par_t1;
-    uint16_t par_t2;
-    int8_t par_t3;
-    int16_t par_p1;
-    int16_t par_p2;
-    int8_t par_p3;
-    int8_t par_p4;
-    uint16_t par_p5;
-    uint16_t par_p6;
-    int8_t par_p7;
-    int8_t par_p8;
-    int16_t par_p9;
-    int8_t par_p10;
-    int8_t par_p11;
-    float t_lin;
-  } calib;
-
-  float temperature;
-  float pressure;
-
-  void readCalibration();
-  float compensateTemperature(uint32_t uncomp_temp);
-  float compensatePressure(uint32_t uncomp_press);
-
-public:
-  bool begin();
-  bool readSensor();
-  float getTemperature();
-  float getPressure();
-};
-
 /* Fim Header */
-
-/* --- */
 
 /* Começo CPP */
 
@@ -335,142 +284,19 @@ float AK09916::getZ_magn() {
   return Z_magn;
 }
 
-bool BMP388::begin() {
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_CMD);
-  Wire.write(0xB6);
-  Wire.endTransmission();
-
-  delay(2);
-
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_CHIP_ID_REG);
-  Wire.endTransmission();
-  Wire.requestFrom(address, (uint8_t)1);
-  if (Wire.read() != 0x50) return false;
-
-  readCalibration();
-
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_OSR);
-  Wire.write(0x03);
-  Wire.endTransmission();
-
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_PWR_CTRL);
-  Wire.write(0x33);
-  Wire.endTransmission();
-
-  delay(25);
-
-  return true;
-}
-
-void BMP388::readCalibration() {
-  uint8_t b[21];
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_CALIB_DATA);
-  Wire.endTransmission();
-  Wire.requestFrom(address, (uint8_t)21);
-  for (int i = 0; i < 21; i++) b[i] = Wire.read();
-
-  calib.par_t1 = (uint16_t)b[1] << 8 | b[0];
-  calib.par_t2 = (uint16_t)b[3] << 8 | b[2];
-  calib.par_t3 = (int8_t)b[4];
-  calib.par_p1 = (int16_t)((b[6] << 8) | b[5]);
-  calib.par_p2 = (int16_t)((b[8] << 8) | b[7]);
-  calib.par_p3 = (int8_t)b[9];
-  calib.par_p4 = (int8_t)b[10];
-  calib.par_p5 = (uint16_t)b[12] << 8 | b[11];
-  calib.par_p6 = (uint16_t)b[14] << 8 | b[13];
-  calib.par_p7 = (int8_t)b[15];
-  calib.par_p8 = (int8_t)b[16];
-  calib.par_p9 = (int16_t)((b[18] << 8) | b[17]);
-  calib.par_p10 = (int8_t)b[19];
-  calib.par_p11 = (int8_t)b[20];
-}
-
-bool BMP388::readSensor() {
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_STATUS_REG);
-  Wire.endTransmission(false);
-  Wire.requestFrom(address, (uint8_t)1);
-
-  uint8_t status = Wire.read();
-  if (!(status & 0x20)) return false;
-
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_DATA_0);
-  Wire.endTransmission(false);
-
-  if (Wire.requestFrom(address, (uint8_t)6) == 6) {
-    uint32_t p0 = Wire.read(), p1 = Wire.read(), p2 = Wire.read();
-    uint32_t t0 = Wire.read(), t1 = Wire.read(), t2 = Wire.read();
-
-    uint32_t adc_p = p0 | (p1 << 8) | (p2 << 16);
-    uint32_t adc_t = t0 | (t1 << 8) | (t2 << 16);
-
-    if (adc_p == 0) return false;
-
-    temperature = compensateTemperature(adc_t);
-    pressure = compensatePressure(adc_p);
-    return true;
-  }
-  return false;
-}
-
-float BMP388::compensateTemperature(uint32_t uncomp_temp) {
-  double partial_data1 = (double)(uncomp_temp - (calib.par_t1 * 256.0));
-  double partial_data2 = (double)(partial_data1 * (calib.par_t2 / 1073741824.0));
-  calib.t_lin = (float)(partial_data2 + (partial_data1 * partial_data1) * (calib.par_t3 / 281474976710656.0));
-  return calib.t_lin;
-}
-
-float BMP388::compensatePressure(uint32_t uncomp_press) {
-  double partial_data1, partial_data2, partial_data3, partial_data4, partial_out1, partial_out2;
-
-  partial_data1 = calib.par_p6 / 64.0;
-  partial_data2 = calib.par_p7 / 256.0;
-  partial_data3 = calib.par_p8 / 32768.0;
-  partial_out1 = (calib.par_p5 * 8.0) + (partial_data1 * calib.t_lin) + (partial_data2 * calib.t_lin * calib.t_lin) + (partial_data3 * calib.t_lin * calib.t_lin * calib.t_lin);
-
-  partial_data1 = calib.par_p2 / 536870912.0;
-  partial_data2 = calib.par_p3 / 4294967296.0;
-  partial_data3 = calib.par_p4 / 137438953472.0;
-  partial_out2 = (double)uncomp_press * ((calib.par_p1 / 1048576.0) + (partial_data1 * calib.t_lin) + (partial_data2 * calib.t_lin * calib.t_lin) + (partial_data3 * calib.t_lin * calib.t_lin * calib.t_lin));
-
-  partial_data1 = (double)uncomp_press * (double)uncomp_press;
-  partial_data2 = (calib.par_p9 / 281474976710656.0) + (calib.par_p10 / 281474976710656.0) * calib.t_lin;
-  partial_data3 = partial_data1 * partial_data2;
-  partial_data4 = partial_data3 + ((double)uncomp_press * (double)uncomp_press * (double)uncomp_press) * (calib.par_p11 / 36893488147419103232.0);
-
-  return (float)(partial_out1 + partial_out2 + partial_data4);
-}
-
-float BMP388::getTemperature() {
-  return temperature;
-}
-
-float BMP388::getPressure() {
-  return pressure;
-}
-
 /* Fim CPP */
 
 ICM20948 myICM;
 AK09916 myAK;
-BMP388 myBMP;
 
 void setup() {
   Serial.begin(115200);
   Wire.begin();
   myICM.begin();
   myAK.begin();
-  myBMP.begin();
   Serial.print("X.accel\tY.accel\tZ.accel\t");
   Serial.print("X.gyro\tY.gyro\tZ.gyro\t");
   Serial.print("X.magn\tY.magn\tZ.magn\t");
-  Serial.print("C.bmp\tP.bmp");
   Serial.println();
 }
 
@@ -478,7 +304,6 @@ void loop() {
   myICM.readAccel();
   myICM.readGyro();
   myAK.readMagn();
-  myBMP.readSensor();
 
   Serial.print(myICM.getX_accel());
   Serial.print("\t");
@@ -499,11 +324,6 @@ void loop() {
   Serial.print(myAK.getY_magn());
   Serial.print("\t");
   Serial.print(myAK.getZ_magn());
-  Serial.print("\t");
-
-  Serial.print(myBMP.getTemperature());
-  Serial.print("\t");
-  Serial.print(myBMP.getPressure());
   Serial.print("\t");
 
   Serial.println();
