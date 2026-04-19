@@ -400,29 +400,31 @@ bool BMP388::readSensor() {
 }
 
 float BMP388::compensateTemperature(uint32_t uncomp_temp) {
-  float partial_data1 = (float)(uncomp_temp - calib.par_t1);
-  float partial_data2 = (float)(partial_data1 * calib.par_t2);
-  calib.t_lin = partial_data2 + (partial_data1 * partial_data1) * calib.par_t3;
+  float partial_data1 = (float)(uncomp_temp - (calib.par_t1 * 256.0f));
+  float partial_data2 = (float)(partial_data1 * (calib.par_t2 / 1073741824.0f));
+  calib.t_lin = partial_data2 + (partial_data1 * partial_data1) * (calib.par_t3 / 281474976710656.0f);
   return calib.t_lin;
 }
 
 float BMP388::compensatePressure(uint32_t uncomp_press) {
-  float partial_data1 = calib.par_p6 * calib.t_lin;
-  float partial_data2 = calib.par_p7 * (calib.t_lin * calib.t_lin);
-  float partial_data3 = calib.par_p8 * (calib.t_lin * calib.t_lin * calib.t_lin);
-  float partial_out1 = calib.par_p5 + partial_data1 + partial_data2 + partial_data3;
+  float partial_data1, partial_data2, partial_data3, partial_data4, partial_out1, partial_out2;
 
-  partial_data1 = calib.par_p2 * calib.t_lin;
-  partial_data2 = calib.par_p3 * (calib.t_lin * calib.t_lin);
-  partial_data3 = calib.par_p4 * (calib.t_lin * calib.t_lin * calib.t_lin);
-  float partial_out2 = (float)uncomp_press * (calib.par_p1 + partial_data1 + partial_data2 + partial_data3);
+  partial_data1 = calib.par_p6 / 64.0f;
+  partial_data2 = calib.par_p7 / 256.0f;
+  partial_data3 = calib.par_p8 / 32768.0f;
+  partial_out1 = (calib.par_p5 * 8.0f) + (partial_data1 * calib.t_lin) + (partial_data2 * calib.t_lin * calib.t_lin) + (partial_data3 * calib.t_lin * calib.t_lin * calib.t_lin);
+
+  partial_data1 = calib.par_p2 / 536870912.0f;
+  partial_data2 = calib.par_p3 / 4294967296.0f;
+  partial_data3 = calib.par_p4 / 137438953472.0f;
+  partial_out2 = (float)uncomp_press * ((calib.par_p1 / 1048576.0f) + (partial_data1 * calib.t_lin) + (partial_data2 * calib.t_lin * calib.t_lin) + (partial_data3 * calib.t_lin * calib.t_lin * calib.t_lin));
 
   partial_data1 = (float)uncomp_press * (float)uncomp_press;
-  partial_data2 = calib.par_p9 + calib.par_p10 * calib.t_lin;
+  partial_data2 = (calib.par_p9 / 281474976710656.0f) + (calib.par_p10 / 281474976710656.0f) * calib.t_lin;
   partial_data3 = partial_data1 * partial_data2;
-  float partial_data4 = partial_data3 + ((float)uncomp_press * (float)uncomp_press * (float)uncomp_press) * calib.par_p11;
+  partial_data4 = partial_data3 + ((float)uncomp_press * (float)uncomp_press * (float)uncomp_press) * (calib.par_p11 / 36893488147419103232.0f);
 
-  return partial_out1 + partial_out2 + partial_data4;
+  return (partial_out1 + partial_out2 + partial_data4) / 100.0f;
 }
 
 float BMP388::getTemperature() {
