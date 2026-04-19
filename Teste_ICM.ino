@@ -21,11 +21,11 @@
 #define GYRO_XOUT_H 0x33
 
 // MAGN
-#define MAG_WIA2     0x01
-#define MAG_ST1      0x10
-#define MAG_HXL      0x11
-#define MAG_CNTL2    0x31
-#define MAG_CNTL3    0x32
+#define MAG_WIA2 0x01
+#define MAG_ST1 0x10
+#define MAG_HXL 0x11
+#define MAG_CNTL2 0x31
+#define MAG_CNTL3 0x32
 
 class ICM20948
 {
