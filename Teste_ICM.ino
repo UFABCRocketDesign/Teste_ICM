@@ -336,6 +336,11 @@ float AK09916::getZ_magn() {
 
 bool BMP388::begin() {
   Wire.beginTransmission(address);
+  Wire.write(INT_PIN_CFG);
+  Wire.write(0x02);
+  Wire.endTransmission();
+
+  Wire.beginTransmission(address);
   Wire.write(BMP3_CHIP_ID_REG);
   Wire.endTransmission();
   Wire.requestFrom(address, (uint8_t)1);
