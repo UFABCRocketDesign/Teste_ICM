@@ -450,7 +450,7 @@ double BMP388::compensate_P(uint32_t uncomp_press) {
 
 ICM20948 myICM;
 AK09916 myAK;
-BMP388 myBMP(0x77, 0.1);
+BMP388 myBMP(0x76, 0.1);
 
 void setup() {
   Serial.begin(115200);
