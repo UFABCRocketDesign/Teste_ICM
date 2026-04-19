@@ -27,8 +27,20 @@
 #define MAG_CNTL2 0x31
 #define MAG_CNTL3 0x32
 
-class ICM20948
-{
+// BMP
+#define BMP3_CHIP_ID_REG 0x00
+#define BMP3_ERR_REG 0x02
+#define BMP3_STATUS_REG 0x03
+#define BMP3_DATA_0 0x04
+#define BMP3_DATA_3 0x07
+#define BMP3_PWR_CTRL 0x1B
+#define BMP3_OSR 0x1C
+#define BMP3_ODR 0x1D
+#define BMP3_CONFIG 0x1F
+#define BMP3_CALIB_DATA 0x31
+#define BMP3_CMD 0x7E
+
+class ICM20948 {
 private:
   uint8_t address = 0x68;
 
@@ -43,7 +55,7 @@ private:
   float X_accel;
   float Y_accel;
   float Z_accel;
-  
+
   // GYRO
   int16_t xaux_gyro;
   int16_t yaux_gyro;
@@ -57,7 +69,7 @@ private:
 public:
   bool begin();
   bool readAccel();
-  bool readGyro(); 
+  bool readGyro();
 
   float getX_accel();
   float getY_accel();
@@ -68,8 +80,7 @@ public:
   float getZ_gyro();
 };
 
-class AK09916 
-{
+class AK09916 {
 private:
   uint8_t address = 0x0C;
   static constexpr float MAG_SENSITIVITY = 0.15f;
@@ -86,6 +97,46 @@ public:
   float getZ_magn();
 };
 
+class BMP388 {
+private:
+  uint8_t address = 0x77;
+
+  struct {
+    uint16_t par_t1;
+    uint16_t par_t2;
+    int8_t par_t3;
+    int16_t par_p1;
+    int16_t par_p2;
+    int8_t par_p3;
+    int8_t par_p4;
+    uint16_t par_p5;
+    uint16_t par_p6;
+    int8_t par_p7;
+    int8_t par_p8;
+    int16_t par_p9;
+    int8_t par_p10;
+    int8_t par_p11;
+    float t_lin;
+  } calib;
+
+  float temperature;
+  float pressure;
+
+  void readCalibration();
+  float compensateTemperature(uint32_t uncomp_temp);
+  float compensatePressure(uint32_t uncomp_press);
+
+public:
+  bool begin();
+  bool readSensor();
+  float getTemperature() {
+    return temperature;
+  }
+  float getPressure() {
+    return pressure;
+  }
+};
+
 /* Fim Header */
 
 /* --- */
@@ -93,16 +144,16 @@ public:
 /* Começo CPP */
 
 bool ICM20948::begin() {
-	Wire.beginTransmission(address);
-	Wire.write(REG_BANK_SEL);               
-	Wire.write((0x00 & 0x03) << 4);                
-	Wire.endTransmission();
-  
+  Wire.beginTransmission(address);
+  Wire.write(REG_BANK_SEL);
+  Wire.write((0x00 & 0x03) << 4);
+  Wire.endTransmission();
+
   Wire.beginTransmission(address);
   Wire.write(PWR_MGMT_1);
   Wire.write(0x01);
   Wire.endTransmission();
-  
+
   Wire.beginTransmission(address);
   Wire.write(PWR_MGMT_2);
   Wire.write(0x00);
@@ -112,10 +163,10 @@ bool ICM20948::begin() {
   Wire.write(LP_CONFIG);
   Wire.write(0x00);
   Wire.endTransmission();
-  
+
   Wire.beginTransmission(address);
-  Wire.write(REG_BANK_SEL);               
-  Wire.write((0x02 & 0x03) << 4);                
+  Wire.write(REG_BANK_SEL);
+  Wire.write((0x02 & 0x03) << 4);
   Wire.endTransmission();
 
   Wire.beginTransmission(address);
@@ -144,8 +195,8 @@ bool ICM20948::begin() {
   Wire.endTransmission();
 
   Wire.beginTransmission(address);
-  Wire.write(REG_BANK_SEL);               
-  Wire.write((0x00 & 0x03) << 4);                
+  Wire.write(REG_BANK_SEL);
+  Wire.write((0x00 & 0x03) << 4);
   Wire.endTransmission();
 
   Wire.beginTransmission(address);
@@ -163,8 +214,7 @@ bool ICM20948::readAccel() {
 
   Wire.requestFrom(address, uint8_t(6));
   unsigned long temp = micros();
-  while (Wire.available() < 6)
-  {
+  while (Wire.available() < 6) {
     if (temp + 10 < micros())
       break;
   }
@@ -199,8 +249,7 @@ bool ICM20948::readGyro() {
 
   Wire.requestFrom(address, uint8_t(6));
   unsigned long temp = micros();
-  while (Wire.available() < 6)
-  {
+  while (Wire.available() < 6) {
     if (temp + 10 < micros())
       break;
   }
@@ -234,7 +283,7 @@ bool AK09916::begin() {
 
   Wire.beginTransmission(0x68);
   Wire.write(0x03);
-  Wire.write(0x00); 
+  Wire.write(0x00);
   Wire.endTransmission();
 
   Wire.beginTransmission(0x68);
@@ -260,10 +309,10 @@ bool AK09916::readMagn() {
   Wire.endTransmission(false);
 
   Wire.requestFrom(address, uint8_t(8));
-  
+
   unsigned long timeout = micros();
   while (Wire.available() < 8) {
-    if (micros() - timeout > 1000) return false; 
+    if (micros() - timeout > 1000) return false;
   }
 
   int16_t x_raw = Wire.read() | (Wire.read() << 8);
@@ -289,19 +338,109 @@ float AK09916::getZ_magn() {
   return Z_magn;
 }
 
+bool BMP388::begin() {
+  // Verificar CHIP_ID (deve ser 0x50) [cite: 36, 37]
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_CHIP_ID_REG);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)1);
+  if (Wire.read() != 0x50) return false;
+
+  readCalibration();
+
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_OSR);
+  Wire.write(0x03);
+  Wire.endTransmission();
+
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_PWR_CTRL);
+  Wire.write(0x33);
+  Wire.endTransmission();
+
+  return true;
+}
+
+void BMP388::readCalibration() {
+  uint8_t b[21];
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_CALIB_DATA);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)21);
+  for (int i = 0; i < 21; i++) b[i] = Wire.read();
+
+  calib.par_t1 = (uint16_t)b[1] << 8 | b[0];
+  calib.par_t2 = (uint16_t)b[3] << 8 | b[2];
+  calib.par_t3 = (int8_t)b[4];
+  calib.par_p1 = (int16_t)((b[6] << 8) | b[5]);
+  calib.par_p2 = (int16_t)((b[8] << 8) | b[7]);
+  calib.par_p3 = (int8_t)b[9];
+  calib.par_p4 = (int8_t)b[10];
+  calib.par_p5 = (uint16_t)b[12] << 8 | b[11];
+  calib.par_p6 = (uint16_t)b[14] << 8 | b[13];
+  calib.par_p7 = (int8_t)b[15];
+  calib.par_p8 = (int8_t)b[16];
+  calib.par_p9 = (int16_t)((b[18] << 8) | b[17]);
+  calib.par_p10 = (int8_t)b[19];
+  calib.par_p11 = (int8_t)b[20];
+}
+
+bool BMP388::readSensor() {
+  Wire.beginTransmission(address);
+  Wire.write(BMP3_DATA_0);
+  Wire.endTransmission();
+  Wire.requestFrom(address, (uint8_t)6);
+
+  uint32_t adc_p = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
+  uint32_t adc_t = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
+
+  temperature = compensateTemperature(adc_t);
+  pressure = compensatePressure(adc_p);
+  return true;
+}
+
+float BMP388::compensateTemperature(uint32_t uncomp_temp) {
+  float partial_data1 = (float)(uncomp_temp - calib.par_t1);
+  float partial_data2 = (float)(partial_data1 * calib.par_t2);
+  calib.t_lin = partial_data2 + (partial_data1 * partial_data1) * calib.par_t3;
+  return calib.t_lin;
+}
+
+float BMP388::compensatePressure(uint32_t uncomp_press) {
+  float partial_data1 = calib.par_p6 * calib.t_lin;
+  float partial_data2 = calib.par_p7 * (calib.t_lin * calib.t_lin);
+  float partial_data3 = calib.par_p8 * (calib.t_lin * calib.t_lin * calib.t_lin);
+  float partial_out1 = calib.par_p5 + partial_data1 + partial_data2 + partial_data3;
+
+  partial_data1 = calib.par_p2 * calib.t_lin;
+  partial_data2 = calib.par_p3 * (calib.t_lin * calib.t_lin);
+  partial_data3 = calib.par_p4 * (calib.t_lin * calib.t_lin * calib.t_lin);
+  float partial_out2 = (float)uncomp_press * (calib.par_p1 + partial_data1 + partial_data2 + partial_data3);
+
+  partial_data1 = (float)uncomp_press * (float)uncomp_press;
+  partial_data2 = calib.par_p9 + calib.par_p10 * calib.t_lin;
+  partial_data3 = partial_data1 * partial_data2;
+  float partial_data4 = partial_data3 + ((float)uncomp_press * (float)uncomp_press * (float)uncomp_press) * calib.par_p11;
+
+  return partial_out1 + partial_out2 + partial_data4;
+}
+
 /* Fim CPP */
 
 ICM20948 myICM;
 AK09916 myAK;
+BMP388 myBMP;
 
 void setup() {
   Serial.begin(115200);
   Wire.begin();
   myICM.begin();
   myAK.begin();
+  myBMP.begin();
   Serial.print("X.accel\tY.accel\tZ.accel\t");
   Serial.print("X.gyro\tY.gyro\tZ.gyro\t");
-  Serial.print("X.magn\tY.magn\tZ.magn");
+  Serial.print("X.magn\tY.magn\tZ.magn\t");
+  Serial.print("C.bmp\tP.bmp");
   Serial.println();
 }
 
@@ -309,18 +448,33 @@ void loop() {
   myICM.readAccel();
   myICM.readGyro();
   myAK.readMagn();
-  
-  Serial.print(myICM.getX_accel()); Serial.print("\t");
-  Serial.print(myICM.getY_accel()); Serial.print("\t");
-  Serial.print(myICM.getZ_accel()); Serial.print("\t");
+  myBMP.readSensor();
 
-  Serial.print(myICM.getX_gyro()); Serial.print("\t");
-  Serial.print(myICM.getY_gyro()); Serial.print("\t");
-  Serial.print(myICM.getZ_gyro()); Serial.print("\t");
-  
-  Serial.print(myAK.getX_magn()); Serial.print("\t");
-  Serial.print(myAK.getY_magn()); Serial.print("\t");
-  Serial.print(myAK.getZ_magn()); Serial.print("\t");
+  Serial.print(myICM.getX_accel());
+  Serial.print("\t");
+  Serial.print(myICM.getY_accel());
+  Serial.print("\t");
+  Serial.print(myICM.getZ_accel());
+  Serial.print("\t");
+
+  Serial.print(myICM.getX_gyro());
+  Serial.print("\t");
+  Serial.print(myICM.getY_gyro());
+  Serial.print("\t");
+  Serial.print(myICM.getZ_gyro());
+  Serial.print("\t");
+
+  Serial.print(myAK.getX_magn());
+  Serial.print("\t");
+  Serial.print(myAK.getY_magn());
+  Serial.print("\t");
+  Serial.print(myAK.getZ_magn());
+  Serial.print("\t");
+
+  Serial.print(myBMP.getTemperature());
+  Serial.print("\t");
+  Serial.print(myBMP.getPressure());
+  Serial.print("\t");
 
   Serial.println();
 }
