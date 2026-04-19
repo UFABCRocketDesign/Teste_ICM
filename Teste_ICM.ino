@@ -212,6 +212,7 @@ bool AK09916::begin() {
   Wire.write(MAG_CNTL3);
   Wire.write(0x01);  // Soft Reset
   Wire.endTransmission();
+  delay(100);
   Wire.beginTransmission(address);
   Wire.write(MAG_CNTL2);
   Wire.write(0x08);  // Continuous Mode 100Hz
@@ -261,6 +262,7 @@ bool BMP388::begin() {
   Wire.write(BMP3_CMD);
   Wire.write(0xB6);  // Soft Reset
   Wire.endTransmission();
+  delay(50);
 
   readCalibration();
 
@@ -278,6 +280,7 @@ bool BMP388::begin() {
   Wire.write(BMP3_PWR_CTRL);
   Wire.write(0x33);  // Normal Mode
   Wire.endTransmission();
+  delay(50);
   return true;
 }
 
@@ -404,4 +407,6 @@ void loop() {
   Serial.print(myBMP.getTemperature());
   Serial.print("\t");
   Serial.println(myBMP.getPressure());
+
+  delay(20);
 }
