@@ -92,37 +92,31 @@ public:
   float getZ_magn();
 };
 
+#define BMP388_ADDRESS_DEFAULT 0x77
+#define BMP3_REG_DATA 0x04
+#define BMP3_REG_PWR_CTRL 0x1B
+#define BMP3_REG_OSR 0x1C
+#define BMP3_REG_CALIB_DATA 0x31
+
 class BMP388
 {
-    // Parâmetros de calibração (bmp3_reg_calib_data)
-    uint16_t par_t1, par_t2;
-    int8_t   par_t3;
-    int16_t  par_p1, par_p2;
-    int8_t   par_p3, par_p4;
-    uint16_t par_p5, par_p6;
-    int8_t   par_p7, par_p8;
-    int16_t  par_p9;
-    int8_t   par_p10, par_p11;
-    
-    double t_lin; // Variável intermediária de temperatura para o cálculo da pressão
-    uint8_t address;
+    double t1, t2, t3;
+    double p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11;
+    double t_lin;
 
 public:
-    float celcius;
-    float pascal;
+    float celcius, pascal;
     bool state;
-    
-    unsigned long lastReadT;
-    unsigned long lastWorkT;
-    unsigned long recalibrateT;
+    uint8_t address;
+    unsigned long lastWorkT, recalibrateT;
 
-    BMP388(uint8_t addr = BMP388_ADDRESS_DEFAULT, float recalT = 0.1);
+    BMP388(uint8_t addr = BMP388_ADDRESS_DEFAULT, float recalT = 1.0);
     void begin();
     bool readAll();
 
 private:
-    double compensate_T(uint32_t uncomp_temp);
-    double compensate_P(uint32_t uncomp_press);
+    double compensate_T(uint32_t adc_T);
+    double compensate_P(uint32_t adc_P);
 };
 
 /* Fim Header */
@@ -327,56 +321,42 @@ float AK09916::getZ_magn() {
 
 BMP388::BMP388(uint8_t addr, float recalT) {
   address = addr;
-  recalibrateT = recalT * 1000000;  // Converte segundos para microssegundos
+  recalibrateT = recalT * 1000000;
   state = false;
-  celcius = 0;
-  pascal = 0;
-  lastReadT = 0;
-  lastWorkT = 0;
 }
 
 void BMP388::begin() {
-  // 1. Reset de Software (Opcional, mas recomendado)
-  Wire.beginTransmission(address);
-  Wire.write(BMP3_REG_CMD);
-  Wire.write(0xB6);
-  Wire.endTransmission();
-  delay(10);
-
-  // 2. Leitura dos 21 bytes de calibração a partir do registrador 0x31
   Wire.beginTransmission(address);
   Wire.write(BMP3_REG_CALIB_DATA);
   Wire.endTransmission();
   Wire.requestFrom(address, uint8_t(21));
 
-  unsigned long start = micros();
-  while (Wire.available() < 21) {
-    if (micros() - start > 5000) break;
-  }
+  uint8_t reg[21];
+  for (int i = 0; i < 21; i++) reg[i] = Wire.read();
 
-  // Mapeamento dos dados de calibração conforme bmp3.c
-  par_t1 = Wire.read() | (Wire.read() << 8);
-  par_t2 = Wire.read() | (Wire.read() << 8);
-  par_t3 = (int8_t)Wire.read();
-  par_p1 = (int16_t)(Wire.read() | (Wire.read() << 8));
-  par_p2 = (int16_t)(Wire.read() | (Wire.read() << 8));
-  par_p3 = (int8_t)Wire.read();
-  par_p4 = (int8_t)Wire.read();
-  par_p5 = Wire.read() | (Wire.read() << 8);
-  par_p6 = Wire.read() | (Wire.read() << 8);
-  par_p7 = (int8_t)Wire.read();
-  par_p8 = (int8_t)Wire.read();
-  par_p9 = (int16_t)(Wire.read() | (Wire.read() << 8));
-  par_p10 = (int8_t)Wire.read();
-  par_p11 = (int8_t)Wire.read();
+  // QUANTIZAÇÃO EXATA (Extraído de bmp3.c: parse_calib_data)
+  t1 = (double)((uint16_t)reg[0] | (uint16_t)reg[1] << 8) / 0.00390625;
+  t2 = (double)((uint16_t)reg[2] | (uint16_t)reg[3] << 8) / 1073741824.0;
+  t3 = (double)((int8_t)reg[4]) / 281474976710656.0;
 
-  // 3. Configuração de Oversampling (Padrão: x1)
+  p1 = ((double)((int16_t)reg[5] | (int16_t)reg[6] << 8) - 16384.0) / 1048576.0;
+  p2 = ((double)((int16_t)reg[7] | (int16_t)reg[8] << 8) - 16384.0) / 536870912.0;
+  p3 = (double)((int8_t)reg[9]) / 4294967296.0;
+  p4 = (double)((int8_t)reg[10]) / 137438953472.0;
+  p5 = (double)((uint16_t)reg[11] | (uint16_t)reg[12] << 8) / 0.125;
+  p6 = (double)((uint16_t)reg[13] | (uint16_t)reg[14] << 8) / 64.0;
+  p7 = (double)((int8_t)reg[15]) / 256.0;
+  p8 = (double)((int8_t)reg[16]) / 32768.0;
+  p9 = (double)((int16_t)reg[17] | (int16_t)reg[18] << 8) / 281474976710656.0;
+  p10 = (double)((int8_t)reg[19]) / 281474976710656.0;
+  p11 = (double)((int8_t)reg[20]) / 36893488147419103232.0;
+
+  // Config: OSR x1 (0x00), PWR: Normal Mode + P & T Enabled (0x33)
   Wire.beginTransmission(address);
   Wire.write(BMP3_REG_OSR);
   Wire.write(0x00);
   Wire.endTransmission();
 
-  // 4. Modo de Operação: Normal (0x30), Temp ON (0x02), Press ON (0x01)
   Wire.beginTransmission(address);
   Wire.write(BMP3_REG_PWR_CTRL);
   Wire.write(0x33);
@@ -384,66 +364,39 @@ void BMP388::begin() {
 }
 
 bool BMP388::readAll() {
-  unsigned long thisReadT = micros();
+  unsigned long now = micros();
   Wire.beginTransmission(address);
   state = (Wire.endTransmission() == 0);
 
   if (state) {
-    // Lógica de recalibração periódica do padrão BMP280
-    if (thisReadT - lastWorkT > recalibrateT) {
-      begin();
-    }
+    if (now - lastWorkT > recalibrateT) begin();
 
-    // Leitura de 6 bytes: Dados brutos de Pressão (3 bytes) e Temperatura (3 bytes)
     Wire.beginTransmission(address);
     Wire.write(BMP3_REG_DATA);
     Wire.endTransmission();
     Wire.requestFrom(address, uint8_t(6));
 
-    unsigned long start = micros();
-    while (Wire.available() < 6) {
-      if (micros() - start > 2000) break;
-    }
+    uint32_t p_raw = (uint32_t)Wire.read() | (uint32_t)Wire.read() << 8 | (uint32_t)Wire.read() << 16;
+    uint32_t t_raw = (uint32_t)Wire.read() | (uint32_t)Wire.read() << 8 | (uint32_t)Wire.read() << 16;
 
-    // No BMP388, os dados são de 24 bits (LSB, LSB, MSB)
-    uint32_t adc_p = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
-    uint32_t adc_t = (uint32_t)Wire.read() | ((uint32_t)Wire.read() << 8) | ((uint32_t)Wire.read() << 16);
-
-    celcius = (float)compensate_T(adc_t);
-    pascal = (float)compensate_P(adc_p);
-
-    lastWorkT = thisReadT;
+    celcius = (float)compensate_T(t_raw);
+    pascal = (float)compensate_P(p_raw);
+    lastWorkT = now;
   }
-  lastReadT = thisReadT;
   return state;
 }
 
-// Funções de compensação em ponto flutuante extraídas de bmp3.c
-double BMP388::compensate_T(uint32_t uncomp_temp) {
-  double partial_data1 = (double)(uncomp_temp - (double)par_t1);
-  double partial_data2 = (double)(partial_data1 * ((double)par_t2 / 1073741824.0));
-  t_lin = partial_data2 + (partial_data1 * partial_data1) * ((double)par_t3 / 281474976710656.0);
+double BMP388::compensate_T(uint32_t adc_T) {
+  double partial1 = (double)adc_T - t1;
+  t_lin = partial1 * t2 + (partial1 * partial1) * t3;
   return t_lin;
 }
 
-double BMP388::compensate_P(uint32_t uncomp_press) {
-  double p1, p2, p3, out1, out2, out3;
-
-  p1 = ((double)par_p6 / 64.0) * t_lin;
-  p2 = ((double)par_p7 / 256.0) * (t_lin * t_lin);
-  p3 = ((double)par_p8 / 32768.0) * (t_lin * t_lin * t_lin);
-  out1 = ((double)par_p5 * 8.0) + p1 + p2 + p3;
-
-  p1 = ((double)par_p2 / 536870912.0) * t_lin;
-  p2 = ((double)par_p3 / 4294967296.0) * (t_lin * t_lin);
-  p3 = ((double)par_p4 / 137438953472.0) * (t_lin * t_lin * t_lin);
-  out2 = (double)uncomp_press * (((double)(par_p1 - 16384) / 1048576.0) + p1 + p2 + p3);
-
-  p1 = (double)uncomp_press * (double)uncomp_press;
-  p2 = ((double)par_p9 / 281474976710656.0) + ((double)par_p10 / 281474976710656.0) * t_lin;
-  out3 = (p1 * p2) + ((p1 * (double)uncomp_press) * ((double)par_p11 / 36893488147419103232.0));
-
-  return out1 + out2 + out3;
+double BMP388::compensate_P(uint32_t adc_P) {
+  double partial_out1 = p5 + p6 * t_lin + p7 * (t_lin * t_lin) + p8 * (t_lin * t_lin * t_lin);
+  double partial_out2 = (double)adc_P * (p1 + p2 * t_lin + p3 * (t_lin * t_lin) + p4 * (t_lin * t_lin * t_lin));
+  double partial_out3 = (double)adc_P * (double)adc_P * (p9 + p10 * t_lin) + (double)adc_P * (double)adc_P * (double)adc_P * p11;
+  return partial_out1 + partial_out2 + partial_out3;
 }
 
 /* Fim CPP */
