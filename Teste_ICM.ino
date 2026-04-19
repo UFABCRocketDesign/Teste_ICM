@@ -444,7 +444,9 @@ void setup() {
   Wire.begin();
   myICM.begin();
   myAK.begin();
-  myBMP.begin();
+  if (!myBMP.begin()) {
+    Serial.println("BMP não inicializado!");
+  }
   Serial.print("X.accel\tY.accel\tZ.accel\t");
   Serial.print("X.gyro\tY.gyro\tZ.gyro\t");
   Serial.print("X.magn\tY.magn\tZ.magn\t");
