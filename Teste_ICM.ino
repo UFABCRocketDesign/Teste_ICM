@@ -20,6 +20,13 @@
 // GYRO
 #define GYRO_XOUT_H 0x33
 
+// MAGN
+#define MAG_WIA2     0x01
+#define MAG_ST1      0x10
+#define MAG_HXL      0x11
+#define MAG_CNTL2    0x31
+#define MAG_CNTL3    0x32
+
 class ICM20948
 {
 private:
@@ -51,7 +58,6 @@ public:
   bool begin();
   bool readAccel();
   bool readGyro(); 
-  bool readMagn();
 
   float getX_accel();
   float getY_accel();
@@ -60,6 +66,24 @@ public:
   float getX_gyro();
   float getY_gyro();
   float getZ_gyro();
+};
+
+class AK09916 
+{
+private:
+  uint8_t address = 0x0C;
+  static constexpr float MAG_SENSITIVITY = 0.15f;
+
+  float X_magn;
+  float Y_magn;
+  float Z_magn;
+public:
+  bool begin();
+  bool readMagn();
+
+  float getX_magn();
+  float getY_magn();
+  float getZ_magn();
 };
 
 /* Fim Header */
@@ -202,27 +226,89 @@ float ICM20948::getZ_gyro() {
   return Z_gyro;
 }
 
-bool ICM20948::readMagn() {
+bool AK09916::begin() {
+  Wire.beginTransmission(0x68);
+  Wire.write(REG_BANK_SEL);
+  Wire.write(0x00);
+  Wire.endTransmission();
 
+  Wire.beginTransmission(0x68);
+  Wire.write(0x03);
+  Wire.write(0x00); 
+  Wire.endTransmission();
+
+  Wire.beginTransmission(0x68);
+  Wire.write(INT_PIN_CFG);
+  Wire.write(0x02);
+  Wire.endTransmission();
+
+  Wire.beginTransmission(address);
+  Wire.write(MAG_CNTL3);
+  Wire.write(0x01);
+  Wire.endTransmission();
+  delay(100);
+
+  Wire.beginTransmission(address);
+  Wire.write(MAG_CNTL2);
+  Wire.write(0x08);
+  Wire.endTransmission();
 }
 
+bool AK09916::readMagn() {
+  Wire.beginTransmission(address);
+  Wire.write(MAG_HXL);
+  Wire.endTransmission(false);
+
+  Wire.requestFrom(address, uint8_t(8));
+  
+  unsigned long timeout = micros();
+  while (Wire.available() < 8) {
+    if (micros() - timeout > 1000) return false; 
+  }
+
+  int16_t x_raw = Wire.read() | (Wire.read() << 8);
+  int16_t y_raw = Wire.read() | (Wire.read() << 8);
+  int16_t z_raw = Wire.read() | (Wire.read() << 8);
+  Wire.read();
+  Wire.read();
+
+  X_magn = float(x_raw) * MAG_SENSITIVITY;
+  Y_magn = float(y_raw) * MAG_SENSITIVITY;
+  Z_magn = float(z_raw) * MAG_SENSITIVITY;
+}
+
+float AK09916::getX_magn() {
+  return X_magn;
+}
+
+float AK09916::getY_magn() {
+  return Y_magn;
+}
+
+float AK09916::getZ_magn() {
+  return Z_magn;
+}
 
 /* Fim CPP */
 
 ICM20948 myICM;
+AK09916 myAK;
 
 void setup() {
   Serial.begin(115200);
   Wire.begin();
   myICM.begin();
+  myAK.begin();
   Serial.print("X.accel\tY.accel\tZ.accel\t");
-  Serial.print("X.gyro\tY.gyro\tZ.gyro");
+  Serial.print("X.gyro\tY.gyro\tZ.gyro\t");
+  Serial.print("X.magn\tY.magn\tZ.magn");
   Serial.println();
 }
 
 void loop() {
   myICM.readAccel();
   myICM.readGyro();
+  myAK.readMagn();
   
   Serial.print(myICM.getX_accel()); Serial.print("\t");
   Serial.print(myICM.getY_accel()); Serial.print("\t");
@@ -231,6 +317,10 @@ void loop() {
   Serial.print(myICM.getX_gyro()); Serial.print("\t");
   Serial.print(myICM.getY_gyro()); Serial.print("\t");
   Serial.print(myICM.getZ_gyro()); Serial.print("\t");
+  
+  Serial.print(myAK.getX_magn()); Serial.print("\t");
+  Serial.print(myAK.getY_magn()); Serial.print("\t");
+  Serial.print(myAK.getZ_magn()); Serial.print("\t");
 
   Serial.println();
 }
