@@ -98,25 +98,24 @@ public:
 #define BMP3_REG_OSR 0x1C
 #define BMP3_REG_CALIB_DATA 0x31
 
-class BMP388
-{
-    double t1, t2, t3;
-    double p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11;
-    double t_lin;
+class BMP388 {
+  double t1, t2, t3;
+  double p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11;
+  double t_lin;
 
 public:
-    float celcius, pascal;
-    bool state;
-    uint8_t address;
-    unsigned long lastWorkT, recalibrateT;
+  float celcius, pascal;
+  bool state;
+  uint8_t address;
+  unsigned long lastWorkT, recalibrateT;
 
-    BMP388(uint8_t addr = BMP388_ADDRESS_DEFAULT, float recalT = 1.0);
-    void begin();
-    bool readAll();
+  BMP388(uint8_t addr = BMP388_ADDRESS_DEFAULT, float recalT = 1.0);
+  void begin();
+  bool readAll();
 
 private:
-    double compensate_T(uint32_t adc_T);
-    double compensate_P(uint32_t adc_P);
+  double compensate_T(uint32_t adc_T);
+  double compensate_P(uint32_t adc_P);
 };
 
 /* Fim Header */
@@ -183,6 +182,8 @@ bool ICM20948::begin() {
   Wire.write(INT_PIN_CFG);
   Wire.write(0x30);
   Wire.endTransmission();
+
+  return true;
 }
 
 bool ICM20948::readAccel() {
@@ -206,6 +207,8 @@ bool ICM20948::readAccel() {
   X_accel = float(xaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
   Y_accel = float(yaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
   Z_accel = float(zaux_acc / ACCEL_SENSITIVITY_16G) * ACCEL_G;
+
+  return true;
 }
 
 float ICM20948::getX_accel() {
@@ -241,6 +244,8 @@ bool ICM20948::readGyro() {
   X_gyro = float(xaux_gyro) / GYRO_SENSITIVITY_2000DPS;
   Y_gyro = float(yaux_gyro) / GYRO_SENSITIVITY_2000DPS;
   Z_gyro = float(zaux_gyro) / GYRO_SENSITIVITY_2000DPS;
+
+  return true;
 }
 
 float ICM20948::getX_gyro() {
@@ -282,6 +287,8 @@ bool AK09916::begin() {
   Wire.write(MAG_CNTL2);
   Wire.write(0x08);
   Wire.endTransmission();
+
+  return true;
 }
 
 bool AK09916::readMagn() {
@@ -305,6 +312,8 @@ bool AK09916::readMagn() {
   X_magn = float(x_raw) * MAG_SENSITIVITY;
   Y_magn = float(y_raw) * MAG_SENSITIVITY;
   Z_magn = float(z_raw) * MAG_SENSITIVITY;
+
+  return true;
 }
 
 float AK09916::getX_magn() {
@@ -334,20 +343,33 @@ void BMP388::begin() {
   uint8_t reg[21];
   for (int i = 0; i < 21; i++) reg[i] = Wire.read();
 
-  // QUANTIZAÇÃO EXATA (Extraído de bmp3.c: parse_calib_data)
-  t1 = (double)((uint16_t)reg[0] | (uint16_t)reg[1] << 8) / 0.00390625;
+  // t1 = (double)((uint16_t)reg[0] | (uint16_t)reg[1] << 8) / 0.00390625;
+  // t2 = (double)((uint16_t)reg[2] | (uint16_t)reg[3] << 8) / 1073741824.0;
+  // t3 = (double)((int8_t)reg[4]) / 281474976710656.0;
+  // p1 = ((double)((int16_t)reg[5] | (int16_t)reg[6] << 8) - 16384.0) / 1048576.0;
+  // p2 = ((double)((int16_t)reg[7] | (int16_t)reg[8] << 8) - 16384.0) / 536870912.0;
+  // p3 = (double)((int8_t)reg[9]) / 4294967296.0;
+  // p4 = (double)((int8_t)reg[10]) / 137438953472.0;
+  // p5 = (double)((uint16_t)reg[11] | (uint16_t)reg[12] << 8) / 0.125;
+  // p6 = (double)((uint16_t)reg[13] | (uint16_t)reg[14] << 8) / 64.0;
+  // p7 = (double)((int8_t)reg[15]) / 256.0;
+  // p8 = (double)((int8_t)reg[16]) / 32768.0;
+  // p9 = (double)((int16_t)reg[17] | (int16_t)reg[18] << 8) / 281474976710656.0;
+  // p10 = (double)((int8_t)reg[19]) / 281474976710656.0;
+  // p11 = (double)((int8_t)reg[20]) / 36893488147419103232.0;
+
+  t1 = (double)((uint16_t)reg[0] | (uint16_t)reg[1] << 8) / 0.00390625;  // Escala 2^-8
   t2 = (double)((uint16_t)reg[2] | (uint16_t)reg[3] << 8) / 1073741824.0;
   t3 = (double)((int8_t)reg[4]) / 281474976710656.0;
-
-  p1 = ((double)((int16_t)reg[5] | (int16_t)reg[6] << 8) - 16384.0) / 1048576.0;
-  p2 = ((double)((int16_t)reg[7] | (int16_t)reg[8] << 8) - 16384.0) / 536870912.0;
+  p1 = ((double)((int16_t)(reg[5] | reg[6] << 8)) - 16384.0) / 1048576.0;
+  p2 = ((double)((int16_t)(reg[7] | reg[8] << 8)) - 16384.0) / 536870912.0;
   p3 = (double)((int8_t)reg[9]) / 4294967296.0;
   p4 = (double)((int8_t)reg[10]) / 137438953472.0;
   p5 = (double)((uint16_t)reg[11] | (uint16_t)reg[12] << 8) / 0.125;
   p6 = (double)((uint16_t)reg[13] | (uint16_t)reg[14] << 8) / 64.0;
   p7 = (double)((int8_t)reg[15]) / 256.0;
   p8 = (double)((int8_t)reg[16]) / 32768.0;
-  p9 = (double)((int16_t)reg[17] | (int16_t)reg[18] << 8) / 281474976710656.0;
+  p9 = (double)((int16_t)(reg[17] | reg[18] << 8)) / 281474976710656.0;
   p10 = (double)((int8_t)reg[19]) / 281474976710656.0;
   p11 = (double)((int8_t)reg[20]) / 36893488147419103232.0;
 
@@ -407,7 +429,7 @@ BMP388 myBMP(0x76, 0.1);
 
 void setup() {
   Serial.begin(115200);
-  Wire.begin();
+  Wire.begin(8, 9);
   myICM.begin();
   myAK.begin();
   myBMP.begin();
