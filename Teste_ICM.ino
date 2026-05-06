@@ -429,7 +429,11 @@ BMP388 myBMP(0x76, 0.1);
 
 void setup() {
   Serial.begin(115200);
+#if defined(ARDUINO_ARCH_AVR)
+  Wire.begin();
+#elif defined(ARDUINO_ARCH_ESP32)
   Wire.begin(8, 9);
+#endif
   myICM.begin();
   myAK.begin();
   myBMP.begin();
